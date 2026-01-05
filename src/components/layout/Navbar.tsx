@@ -9,13 +9,15 @@ import {
   FlaskConical,
   Moon,
   Sun,
-  User
+  User,
+  Hexagon
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
   { name: "Dashboard", path: "/", icon: LayoutDashboard },
   { name: "Materials Explorer", path: "/materials", icon: Atom },
+  { name: "Molecule Builder", path: "/molecule-builder", icon: Hexagon },
   { name: "Quantum Simulator", path: "/simulator", icon: Cpu },
   { name: "AI Insights", path: "/insights", icon: Brain },
   { name: "Experiments", path: "/experiments", icon: FlaskConical },
