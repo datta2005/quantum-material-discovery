@@ -62,6 +62,26 @@ const ELEMENT_RADII: Record<string, number> = {
   Ar: 0.4,
 };
 
+// Bond order determination based on common chemistry rules
+const TYPICAL_BOND_ORDERS: Record<string, Record<string, number>> = {
+  C: { C: 1, O: 2, N: 2, H: 1, S: 2 },
+  O: { O: 2, C: 2, N: 2, H: 1, S: 2 },
+  N: { N: 3, C: 2, O: 2, H: 1 },
+  S: { S: 2, C: 2, O: 2, H: 1 },
+};
+
+function getBondOrder(symbol1: string, symbol2: string): number {
+  // Check if we have a predefined bond order
+  if (TYPICAL_BOND_ORDERS[symbol1]?.[symbol2]) {
+    return TYPICAL_BOND_ORDERS[symbol1][symbol2];
+  }
+  if (TYPICAL_BOND_ORDERS[symbol2]?.[symbol1]) {
+    return TYPICAL_BOND_ORDERS[symbol2][symbol1];
+  }
+  // Default to single bond
+  return 1;
+}
+
 interface AtomPosition {
   symbol: string;
   position: [number, number, number];
@@ -72,6 +92,9 @@ interface AtomPosition {
 interface Bond {
   start: [number, number, number];
   end: [number, number, number];
+  order: number; // 1 = single, 2 = double, 3 = triple
+  startSymbol: string;
+  endSymbol: string;
 }
 
 function Atom({ position, color, radius, symbol }: AtomPosition) {
@@ -100,12 +123,20 @@ function Atom({ position, color, radius, symbol }: AtomPosition) {
   );
 }
 
-function BondCylinder({ start, end }: Bond) {
-  const ref = useRef<THREE.Mesh>(null);
-  
+function SingleCylinder({ 
+  start, 
+  end, 
+  offset = [0, 0, 0],
+  radius = 0.06 
+}: { 
+  start: [number, number, number]; 
+  end: [number, number, number]; 
+  offset?: [number, number, number];
+  radius?: number;
+}) {
   const { position, rotation, length } = useMemo(() => {
-    const startVec = new THREE.Vector3(...start);
-    const endVec = new THREE.Vector3(...end);
+    const startVec = new THREE.Vector3(...start).add(new THREE.Vector3(...offset));
+    const endVec = new THREE.Vector3(...end).add(new THREE.Vector3(...offset));
     const midpoint = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
     const direction = new THREE.Vector3().subVectors(endVec, startVec);
     const length = direction.length();
@@ -122,12 +153,11 @@ function BondCylinder({ start, end }: Bond) {
       rotation: [euler.x, euler.y, euler.z] as [number, number, number],
       length,
     };
-  }, [start, end]);
+  }, [start, end, offset]);
 
   return (
     <Cylinder
-      ref={ref}
-      args={[0.08, 0.08, length, 16]}
+      args={[radius, radius, length, 16]}
       position={position}
       rotation={rotation}
     >
@@ -137,6 +167,62 @@ function BondCylinder({ start, end }: Bond) {
         roughness={0.3}
       />
     </Cylinder>
+  );
+}
+
+function BondCylinder({ start, end, order }: Bond) {
+  const offsets = useMemo(() => {
+    // Calculate perpendicular offset direction for double/triple bonds
+    const direction = new THREE.Vector3(
+      end[0] - start[0],
+      end[1] - start[1],
+      end[2] - start[2]
+    ).normalize();
+    
+    // Find a perpendicular vector
+    const up = new THREE.Vector3(0, 1, 0);
+    let perpendicular = new THREE.Vector3().crossVectors(direction, up);
+    if (perpendicular.length() < 0.1) {
+      perpendicular = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(1, 0, 0));
+    }
+    perpendicular.normalize();
+    
+    // Second perpendicular for triple bonds
+    const perpendicular2 = new THREE.Vector3().crossVectors(direction, perpendicular).normalize();
+    
+    const spacing = 0.12;
+    
+    if (order === 1) {
+      return [[0, 0, 0] as [number, number, number]];
+    } else if (order === 2) {
+      return [
+        [perpendicular.x * spacing, perpendicular.y * spacing, perpendicular.z * spacing] as [number, number, number],
+        [-perpendicular.x * spacing, -perpendicular.y * spacing, -perpendicular.z * spacing] as [number, number, number],
+      ];
+    } else {
+      // Triple bond - one in center, two offset
+      return [
+        [0, 0, 0] as [number, number, number],
+        [perpendicular.x * spacing * 1.5, perpendicular.y * spacing * 1.5, perpendicular.z * spacing * 1.5] as [number, number, number],
+        [-perpendicular.x * spacing * 1.5, -perpendicular.y * spacing * 1.5, -perpendicular.z * spacing * 1.5] as [number, number, number],
+      ];
+    }
+  }, [start, end, order]);
+
+  const cylinderRadius = order === 1 ? 0.06 : order === 2 ? 0.045 : 0.04;
+
+  return (
+    <group>
+      {offsets.map((offset, i) => (
+        <SingleCylinder
+          key={i}
+          start={start}
+          end={end}
+          offset={offset}
+          radius={cylinderRadius}
+        />
+      ))}
+    </group>
   );
 }
 
@@ -175,7 +261,7 @@ function MoleculeStructure({ elements }: { elements: MoleculeElement[] }) {
       }
     });
     
-    // Generate bonds between nearby atoms (simplified bonding logic)
+    // Generate bonds between nearby atoms with bond order
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
         const dist = Math.sqrt(
@@ -187,9 +273,13 @@ function MoleculeStructure({ elements }: { elements: MoleculeElement[] }) {
         // Connect atoms that are close enough
         const bondThreshold = atoms[i].radius + atoms[j].radius + 0.8;
         if (dist < bondThreshold && bonds.length < atoms.length * 2) {
+          const bondOrder = getBondOrder(atoms[i].symbol, atoms[j].symbol);
           bonds.push({
             start: atoms[i].position,
             end: atoms[j].position,
+            order: bondOrder,
+            startSymbol: atoms[i].symbol,
+            endSymbol: atoms[j].symbol,
           });
         }
       }
