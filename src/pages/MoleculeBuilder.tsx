@@ -3,6 +3,7 @@ import { PeriodicTable } from "@/components/molecule-builder/PeriodicTable";
 import { MoleculeConstructionZone, MoleculeElement } from "@/components/molecule-builder/MoleculeConstructionZone";
 import { MoleculeSummary } from "@/components/molecule-builder/MoleculeSummary";
 import { SimulationPanel } from "@/components/molecule-builder/SimulationPanel";
+import { Molecule3DViewer } from "@/components/molecule-builder/Molecule3DViewer";
 import { useState } from "react";
 
 const MoleculeBuilder = () => {
@@ -59,15 +60,28 @@ const MoleculeBuilder = () => {
             <PeriodicTable onElementSelect={handleAddElement} />
           </div>
 
-          {/* Center Panel - Construction Zone */}
-          <div className="lg:col-span-5 bg-card rounded-xl border border-border p-6">
-            <MoleculeConstructionZone
-              elements={elements}
-              onAddElement={handleAddElement}
-              onUpdateCount={handleUpdateCount}
-              onRemoveElement={handleRemoveElement}
-              onClear={handleClear}
-            />
+          {/* Center Panel - Construction Zone & 3D View */}
+          <div className="lg:col-span-5 space-y-6">
+            <div className="bg-card rounded-xl border border-border p-6">
+              <MoleculeConstructionZone
+                elements={elements}
+                onAddElement={handleAddElement}
+                onUpdateCount={handleUpdateCount}
+                onRemoveElement={handleRemoveElement}
+                onClear={handleClear}
+              />
+            </div>
+            
+            {/* 3D Molecule Visualization */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-quantum" />
+                3D Molecular Structure
+              </h3>
+              <div className="h-[350px]">
+                <Molecule3DViewer elements={elements} />
+              </div>
+            </div>
           </div>
 
           {/* Right Panel - Summary & Simulation */}
