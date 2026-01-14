@@ -5,10 +5,15 @@ import { MoleculeSummary } from "@/components/molecule-builder/MoleculeSummary";
 import { SimulationPanel } from "@/components/molecule-builder/SimulationPanel";
 import { Molecule3DViewer } from "@/components/molecule-builder/Molecule3DViewer";
 import { MoleculePresets } from "@/components/molecule-builder/MoleculePresets";
+import { MoleculeCompareView } from "@/components/molecule-builder/MoleculeCompareView";
+import { ExportPanel } from "@/components/molecule-builder/ExportPanel";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ArrowLeftRight } from "lucide-react";
 
 const MoleculeBuilder = () => {
   const [elements, setElements] = useState<MoleculeElement[]>([]);
+  const [showCompareView, setShowCompareView] = useState(false);
 
   const handleAddElement = (element: { symbol: string; name: string; atomicMass: number }) => {
     setElements(prev => {
@@ -51,11 +56,22 @@ const MoleculeBuilder = () => {
       <Navbar />
       <main className="container py-8 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Molecule Builder</h1>
-          <p className="text-muted-foreground">
-            Construct molecules visually and run quantum-inspired simulations
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Molecule Builder</h1>
+            <p className="text-muted-foreground">
+              Construct molecules visually and run quantum-inspired simulations
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setShowCompareView(true)}
+            disabled={elements.length === 0}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+            Compare Molecules
+          </Button>
         </div>
 
         {/* Main Grid Layout */}
@@ -94,15 +110,24 @@ const MoleculeBuilder = () => {
             </div>
           </div>
 
-          {/* Right Panel - Summary & Simulation */}
+          {/* Right Panel - Summary, Export & Simulation */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-card rounded-xl border border-border p-6">
               <MoleculeSummary elements={elements} />
             </div>
+            <ExportPanel elements={elements} />
             <SimulationPanel elements={elements} />
           </div>
         </div>
       </main>
+
+      {/* Compare View Modal */}
+      {showCompareView && (
+        <MoleculeCompareView
+          currentMolecule={elements}
+          onClose={() => setShowCompareView(false)}
+        />
+      )}
     </div>
   );
 };

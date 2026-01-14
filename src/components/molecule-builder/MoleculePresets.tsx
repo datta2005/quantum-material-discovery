@@ -1,12 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Beaker } from "lucide-react";
+import { MoleculeElement } from "./MoleculeConstructionZone";
 
 interface MoleculePresetsProps {
-  onLoadPreset: (elements: Array<{ symbol: string; name: string; atomicMass: number; count: number }>) => void;
+  onLoadPreset: (elements: MoleculeElement[]) => void;
 }
 
-const PRESETS = [
+export const PRESETS: {
+  id: string;
+  name: string;
+  formula: string;
+  elements: MoleculeElement[];
+}[] = [
   {
+    id: "water",
     name: "Water",
     formula: "H₂O",
     elements: [
@@ -15,6 +22,7 @@ const PRESETS = [
     ],
   },
   {
+    id: "co2",
     name: "Carbon Dioxide",
     formula: "CO₂",
     elements: [
@@ -23,6 +31,7 @@ const PRESETS = [
     ],
   },
   {
+    id: "methane",
     name: "Methane",
     formula: "CH₄",
     elements: [
@@ -31,11 +40,31 @@ const PRESETS = [
     ],
   },
   {
+    id: "benzene",
     name: "Benzene",
     formula: "C₆H₆",
     elements: [
       { symbol: "C", name: "Carbon", atomicMass: 12.011, count: 6 },
       { symbol: "H", name: "Hydrogen", atomicMass: 1.008, count: 6 },
+    ],
+  },
+  {
+    id: "ammonia",
+    name: "Ammonia",
+    formula: "NH₃",
+    elements: [
+      { symbol: "N", name: "Nitrogen", atomicMass: 14.007, count: 1 },
+      { symbol: "H", name: "Hydrogen", atomicMass: 1.008, count: 3 },
+    ],
+  },
+  {
+    id: "ethanol",
+    name: "Ethanol",
+    formula: "C₂H₆O",
+    elements: [
+      { symbol: "C", name: "Carbon", atomicMass: 12.011, count: 2 },
+      { symbol: "H", name: "Hydrogen", atomicMass: 1.008, count: 6 },
+      { symbol: "O", name: "Oxygen", atomicMass: 15.999, count: 1 },
     ],
   },
 ];

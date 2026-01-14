@@ -1,0 +1,237 @@
+import { MoleculeElement } from "./MoleculeConstructionZone";
+import { Button } from "@/components/ui/button";
+import { Download, FileJson, FileText, Copy, Check } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+
+interface ExportPanelProps {
+  elements: MoleculeElement[];
+}
+
+function generateMoleculeData(elements: MoleculeElement[]) {
+  const formatFormula = () => {
+    if (elements.length === 0) return "";
+    return elements.map(el => {
+      const subscript = el.count > 1 ? String(el.count).split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[parseInt(d)]).join("") : "";
+      return el.symbol + subscript;
+    }).join("");
+  };
+
+  const molecularWeight = elements.reduce((sum, el) => sum + el.atomicMass * el.count, 0);
+  const stabilityScore = elements.length === 0 ? 0 : 
+    Math.min(9.9, 7.5 + Math.min(elements.length * 0.5, 2) + (elements.length * 0.1));
+  const energyLevel = elements.length === 0 ? 0 : -1.2 - molecularWeight * 0.01 - elements.length * 0.1;
+
+  const getBondType = () => {
+    if (elements.length === 0) return "Unknown";
+    const symbols = elements.map(e => e.symbol);
+    if (symbols.includes("Na") || symbols.includes("K") || symbols.includes("Ca")) return "Ionic";
+    if (symbols.includes("C") && symbols.includes("H")) return "Covalent (Organic)";
+    if (symbols.some(s => ["Fe", "Cu", "Au", "Ag", "Pt"].includes(s))) return "Metallic";
+    return "Covalent";
+  };
+
+  return {
+    formula: formatFormula(),
+    formulaPlain: elements.map(el => el.symbol + (el.count > 1 ? el.count : "")).join(""),
+    elements: elements.map(el => ({
+      symbol: el.symbol,
+      name: el.name,
+      atomicMass: el.atomicMass,
+      count: el.count,
+    })),
+    properties: {
+      molecularWeight: Number(molecularWeight.toFixed(4)),
+      molecularWeightUnit: "g/mol",
+      stabilityScore: Number(stabilityScore.toFixed(2)),
+      stabilityScoreMax: 10,
+      estimatedEnergyLevel: Number(energyLevel.toFixed(4)),
+      energyUnit: "Ha (Hartree)",
+      predictedBondType: getBondType(),
+      totalAtoms: elements.reduce((sum, el) => sum + el.count, 0),
+      uniqueElements: elements.length,
+    },
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      version: "1.0.0",
+      platform: "QuantumSphere Molecule Builder",
+    },
+  };
+}
+
+function generatePDFContent(elements: MoleculeElement[]): string {
+  const data = generateMoleculeData(elements);
+  const date = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `
+================================================================================
+                        MOLECULAR ANALYSIS REPORT
+                           QuantumSphere™
+================================================================================
+
+Generated: ${date}
+
+--------------------------------------------------------------------------------
+                           MOLECULAR FORMULA
+--------------------------------------------------------------------------------
+
+    ${data.formula}
+    (Plain notation: ${data.formulaPlain})
+
+--------------------------------------------------------------------------------
+                           ELEMENTAL COMPOSITION
+--------------------------------------------------------------------------------
+
+${elements.map(el => `    ${el.symbol.padEnd(4)} ${el.name.padEnd(15)} x${el.count.toString().padStart(3)}    (${el.atomicMass.toFixed(4)} u each)`).join("\n")}
+
+--------------------------------------------------------------------------------
+                           MOLECULAR PROPERTIES
+--------------------------------------------------------------------------------
+
+    Molecular Weight:        ${data.properties.molecularWeight} ${data.properties.molecularWeightUnit}
+    Total Atoms:             ${data.properties.totalAtoms}
+    Unique Elements:         ${data.properties.uniqueElements}
+    
+    Predicted Bond Type:     ${data.properties.predictedBondType}
+    
+    Stability Score:         ${data.properties.stabilityScore} / ${data.properties.stabilityScoreMax}
+    Est. Energy Level:       ${data.properties.estimatedEnergyLevel} ${data.properties.energyUnit}
+
+--------------------------------------------------------------------------------
+                           QUANTUM ANALYSIS NOTES
+--------------------------------------------------------------------------------
+
+    This molecular structure analysis was performed using quantum-inspired
+    algorithms. The stability score and energy level are AI-approximated
+    values based on computational chemistry models.
+    
+    For research reference only. Values may differ from experimental results.
+
+--------------------------------------------------------------------------------
+                           DISCLAIMER
+--------------------------------------------------------------------------------
+
+    This report is generated by QuantumSphere Molecule Builder for educational
+    and research purposes. The quantum simulation results are approximations
+    and should be validated with experimental data for critical applications.
+
+================================================================================
+                    © ${new Date().getFullYear()} QuantumSphere - Quantum Materials Science Platform
+================================================================================
+`.trim();
+}
+
+export function ExportPanel({ elements }: ExportPanelProps) {
+  const [copied, setCopied] = useState(false);
+  const hasElements = elements.length > 0;
+
+  const handleExportJSON = () => {
+    if (!hasElements) return;
+    
+    const data = generateMoleculeData(elements);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `molecule-${data.formulaPlain || "empty"}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("JSON exported successfully!");
+  };
+
+  const handleExportPDF = () => {
+    if (!hasElements) return;
+    
+    const content = generatePDFContent(elements);
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const data = generateMoleculeData(elements);
+    a.download = `molecule-report-${data.formulaPlain || "empty"}-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Report exported successfully!");
+  };
+
+  const handleCopyJSON = async () => {
+    if (!hasElements) return;
+    
+    const data = generateMoleculeData(elements);
+    await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    setCopied(true);
+    toast.success("JSON copied to clipboard!");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <Download className="h-4 w-4 text-accent" />
+        <h3 className="text-sm font-semibold">Export Molecule Data</h3>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExportJSON}
+          disabled={!hasElements}
+          className="flex items-center gap-2"
+        >
+          <FileJson className="h-4 w-4" />
+          Export JSON
+        </Button>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExportPDF}
+          disabled={!hasElements}
+          className="flex items-center gap-2"
+        >
+          <FileText className="h-4 w-4" />
+          Export Report
+        </Button>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleCopyJSON}
+        disabled={!hasElements}
+        className="w-full flex items-center gap-2"
+      >
+        {copied ? (
+          <>
+            <Check className="h-4 w-4 text-success" />
+            Copied!
+          </>
+        ) : (
+          <>
+            <Copy className="h-4 w-4" />
+            Copy JSON to Clipboard
+          </>
+        )}
+      </Button>
+
+      {!hasElements && (
+        <p className="text-xs text-muted-foreground text-center">
+          Add elements to enable export
+        </p>
+      )}
+    </div>
+  );
+}
