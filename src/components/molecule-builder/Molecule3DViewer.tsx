@@ -1,8 +1,46 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sphere, Cylinder, Text, Environment } from "@react-three/drei";
-import { useMemo, useRef } from "react";
+import { useMemo, useState, useCallback } from "react";
 import * as THREE from "three";
 import type { MoleculeElement } from "./MoleculeConstructionZone";
+
+// Bond legend component
+function BondLegend({ bondTypes }: { bondTypes: Set<number> }) {
+  if (bondTypes.size === 0) return null;
+
+  const bondInfo = [
+    { order: 1, label: "Single", lines: 1 },
+    { order: 2, label: "Double", lines: 2 },
+    { order: 3, label: "Triple", lines: 3 },
+  ];
+
+  const presentBonds = bondInfo.filter(b => bondTypes.has(b.order));
+
+  return (
+    <div className="absolute top-3 right-3 bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-border">
+      <p className="text-xs font-semibold text-muted-foreground mb-2">Bond Types</p>
+      <div className="space-y-1.5">
+        {presentBonds.map(bond => (
+          <div key={bond.order} className="flex items-center gap-2">
+            <div className="w-8 h-4 flex items-center justify-center gap-0.5">
+              {Array.from({ length: bond.lines }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-full h-0.5 bg-muted-foreground rounded-full"
+                  style={{ 
+                    height: bond.lines === 1 ? "3px" : "2px",
+                    opacity: 0.8 
+                  }}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">{bond.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Element colors based on CPK coloring convention
 const ELEMENT_COLORS: Record<string, string> = {
@@ -226,7 +264,7 @@ function BondCylinder({ start, end, order }: Bond) {
   );
 }
 
-function MoleculeStructure({ elements }: { elements: MoleculeElement[] }) {
+function MoleculeStructure({ elements, onBondTypesChange }: { elements: MoleculeElement[]; onBondTypesChange?: (types: Set<number>) => void }) {
   const { atoms, bonds } = useMemo(() => {
     const atoms: AtomPosition[] = [];
     const bonds: Bond[] = [];
@@ -288,6 +326,14 @@ function MoleculeStructure({ elements }: { elements: MoleculeElement[] }) {
     return { atoms, bonds };
   }, [elements]);
 
+  // Notify parent of bond types present
+  useMemo(() => {
+    if (onBondTypesChange) {
+      const types = new Set(bonds.map(b => b.order));
+      onBondTypesChange(types);
+    }
+  }, [bonds, onBondTypesChange]);
+
   if (atoms.length === 0) {
     return null;
   }
@@ -314,6 +360,11 @@ interface Molecule3DViewerProps {
 
 export function Molecule3DViewer({ elements }: Molecule3DViewerProps) {
   const totalAtoms = getTotalAtoms(elements);
+  const [bondTypes, setBondTypes] = useState<Set<number>>(new Set());
+
+  const handleBondTypesChange = useCallback((types: Set<number>) => {
+    setBondTypes(types);
+  }, []);
 
   return (
     <div className="relative h-full w-full min-h-[300px] rounded-xl overflow-hidden bg-gradient-to-b from-muted/30 to-muted/50 border border-border">
@@ -349,7 +400,7 @@ export function Molecule3DViewer({ elements }: Molecule3DViewerProps) {
               penumbra={1}
               intensity={0.5}
             />
-            <MoleculeStructure elements={elements} />
+            <MoleculeStructure elements={elements} onBondTypesChange={handleBondTypesChange} />
             <OrbitControls
               enablePan={true}
               enableZoom={true}
@@ -359,6 +410,7 @@ export function Molecule3DViewer({ elements }: Molecule3DViewerProps) {
             />
             <Environment preset="studio" />
           </Canvas>
+          <BondLegend bondTypes={bondTypes} />
           <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center text-xs text-muted-foreground bg-background/80 backdrop-blur-sm rounded-lg px-3 py-2">
             <span>{totalAtoms} atom{totalAtoms !== 1 ? 's' : ''}</span>
             <span className="opacity-60">Drag to rotate • Scroll to zoom</span>

@@ -4,6 +4,7 @@ import { MoleculeConstructionZone, MoleculeElement } from "@/components/molecule
 import { MoleculeSummary } from "@/components/molecule-builder/MoleculeSummary";
 import { SimulationPanel } from "@/components/molecule-builder/SimulationPanel";
 import { Molecule3DViewer } from "@/components/molecule-builder/Molecule3DViewer";
+import { MoleculePresets } from "@/components/molecule-builder/MoleculePresets";
 import { useState } from "react";
 
 const MoleculeBuilder = () => {
@@ -41,6 +42,10 @@ const MoleculeBuilder = () => {
     setElements([]);
   };
 
+  const handleLoadPreset = (presetElements: MoleculeElement[]) => {
+    setElements(presetElements);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -55,9 +60,14 @@ const MoleculeBuilder = () => {
 
         {/* Main Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Panel - Periodic Table */}
-          <div className="lg:col-span-3 bg-card rounded-xl border border-border p-4">
-            <PeriodicTable onElementSelect={handleAddElement} />
+          {/* Left Panel - Periodic Table & Presets */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="bg-card rounded-xl border border-border p-4">
+              <MoleculePresets onLoadPreset={handleLoadPreset} />
+            </div>
+            <div className="bg-card rounded-xl border border-border p-4">
+              <PeriodicTable onElementSelect={handleAddElement} />
+            </div>
           </div>
 
           {/* Center Panel - Construction Zone & 3D View */}
