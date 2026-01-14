@@ -7,7 +7,6 @@ import { Molecule3DViewer } from "@/components/molecule-builder/Molecule3DViewer
 import { MoleculePresets } from "@/components/molecule-builder/MoleculePresets";
 import { MoleculeCompareView } from "@/components/molecule-builder/MoleculeCompareView";
 import { ExportPanel } from "@/components/molecule-builder/ExportPanel";
-import { MolecularPropertyCharts } from "@/components/molecule-builder/MolecularPropertyCharts";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeftRight } from "lucide-react";
@@ -108,11 +107,6 @@ const MoleculeBuilder = () => {
               <div className="h-[350px]">
                 <Molecule3DViewer elements={elements} />
               </div>
-            </div>
-
-            {/* Molecular Property Charts */}
-            <div className="bg-card rounded-xl border border-border p-4">
-              <MolecularPropertyCharts elements={elements} />
             </div>
           </div>
 
