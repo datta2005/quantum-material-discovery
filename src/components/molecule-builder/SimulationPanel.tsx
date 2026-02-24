@@ -7,11 +7,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, Send, Brain, Cpu, Waves, Zap, ChevronDown } from "lucide-react";
+import { Play, Send, Brain, Cpu, Waves, Zap, ChevronDown, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { MoleculeElement } from "./MoleculeConstructionZone";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useNavigate } from "react-router-dom";
+import { QuantumCircuitViewer } from "@/components/QuantumCircuitViewer";
+
+const API_URL = "http://localhost:5000";
 
 interface SimulationPanelProps {
   elements: MoleculeElement[];
@@ -19,28 +22,64 @@ interface SimulationPanelProps {
 
 export function SimulationPanel({ elements }: SimulationPanelProps) {
   const navigate = useNavigate();
-  const [qubits, setQubits] = useState([6]);
+  const [qubits, setQubits] = useState([3]);
   const [simulationType, setSimulationType] = useState("electronic");
   const [isRunning, setIsRunning] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
   const [isExplanationOpen, setIsExplanationOpen] = useState(false);
 
-  const hasElements = elements.length > 0;
+  // Real results from backend
+  const [aiResults, setAiResults] = useState<any>(null);
+  const [quantumResults, setQuantumResults] = useState<any>(null);
+  const [applications, setApplications] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleRunSimulation = () => {
-    if (!hasElements) return;
-    setIsRunning(true);
-    setTimeout(() => {
-      setIsRunning(false);
-      setHasResults(true);
-    }, 2000);
-  };
+  const hasElements = elements.length > 0;
 
   const formatFormula = () => {
     return elements.map(el => {
       const subscript = el.count > 1 ? String(el.count).split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[parseInt(d)]).join("") : "";
       return el.symbol + subscript;
     }).join("");
+  };
+
+  const getRawFormula = () => {
+    return elements.map(el => `${el.symbol}${el.count > 1 ? el.count : ""}`).join("");
+  };
+
+  const handleRunSimulation = async () => {
+    if (!hasElements) return;
+    setIsRunning(true);
+    setError(null);
+    setAiResults(null);
+    setQuantumResults(null);
+    setApplications(null);
+
+    try {
+      const res = await fetch(`${API_URL}/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formula: getRawFormula(),
+          n_qubits: qubits[0],
+          max_iterations: 25,
+          simulation_type: simulationType,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      setAiResults(data.ai_screening);
+      setQuantumResults(data.quantum_simulation);
+      setApplications(data.predicted_applications);
+    } catch (err: any) {
+      setError(err.message || "Simulation failed");
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   return (
@@ -69,17 +108,10 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Simulation Depth (Qubits)</label>
+              <label className="text-sm font-medium">Qubits</label>
               <span className="text-sm font-bold text-accent">{qubits[0]}</span>
             </div>
-            <Slider
-              value={qubits}
-              onValueChange={setQubits}
-              min={2}
-              max={16}
-              step={1}
-              className="py-2"
-            />
+            <Slider value={qubits} onValueChange={setQubits} min={2} max={6} step={1} className="py-2" />
           </div>
 
           <Button
@@ -103,79 +135,107 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
         </div>
       </div>
 
-      {/* Simulation Results */}
-      {hasResults && hasElements && (
+      {/* Error */}
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {/* AI results */}
+      {aiResults && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-4 animate-fade-in">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Zap className="h-5 w-5 text-accent" />
-            Simulation Results
+            <Brain className="h-5 w-5 text-blue-500" />
+            AI Prediction
           </h3>
-
-          {/* Quantum Circuit Placeholder */}
-          <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-            <p className="text-xs text-muted-foreground mb-2">Quantum Circuit Visualization</p>
-            <div className="h-20 flex items-center justify-center">
-              <svg className="w-full h-full" viewBox="0 0 300 60">
-                {[0, 1, 2].map((i) => (
-                  <g key={i}>
-                    <line x1="20" y1={15 + i * 20} x2="280" y2={15 + i * 20} stroke="currentColor" strokeOpacity="0.3" />
-                    <text x="5" y={19 + i * 20} className="text-[8px] fill-muted-foreground">q{i}</text>
-                    <rect x="60" y={7 + i * 20} width="16" height="16" rx="2" className="fill-accent/20 stroke-accent" strokeWidth="1" />
-                    <text x="64" y={19 + i * 20} className="text-[8px] fill-accent font-bold">H</text>
-                    {i < 2 && <circle cx="120" cy={15 + i * 20} r="3" className="fill-quantum" />}
-                    <rect x="200" y={7 + i * 20} width="20" height="16" rx="2" className="fill-accent/10 stroke-accent/50" strokeWidth="1" />
-                  </g>
-                ))}
-                <line x1="120" y1="15" x2="120" y2="35" stroke="currentColor" strokeOpacity="0.5" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Energy Graph */}
-          <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-            <p className="text-xs text-muted-foreground mb-2">Energy Levels</p>
-            <div className="h-24 flex items-end justify-around gap-2 px-2">
-              {[0.78, 0.15, 0.05, 0.02].map((prob, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div
-                    className="w-full rounded-t-md bg-gradient-to-t from-accent to-quantum transition-all"
-                    style={{ height: `${prob * 100}%` }}
-                  />
-                  <span className="text-[10px] text-muted-foreground">E{i}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* AI Insight */}
-          <div className="p-4 rounded-xl bg-gradient-to-r from-accent/10 to-quantum/10 border border-accent/20">
-            <div className="flex items-start gap-3">
-              <Brain className="h-5 w-5 text-accent flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium mb-1">AI-Generated Insight</p>
-                <p className="text-sm text-muted-foreground">
-                  This molecular structure ({formatFormula()}) shows high stability and potential for energy storage applications. 
-                  The quantum simulation indicates favorable electronic properties with a predicted ground state energy of -1.247 Ha.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Integration Buttons */}
           <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" onClick={() => navigate("/simulator")}>
-              <Send className="h-4 w-4 mr-2" />
-              Send to Simulator
-            </Button>
-            <Button variant="outline" onClick={() => navigate("/insights")}>
-              <Brain className="h-4 w-4 mr-2" />
-              Analyze in AI Insights
-            </Button>
+            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+              <p className="text-xs text-muted-foreground">Formation Energy</p>
+              <p className="font-semibold text-sm">{aiResults.formation_energy_eV_per_atom?.toFixed(3)} eV/atom</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+              <p className="text-xs text-muted-foreground">Band Gap</p>
+              <p className="font-semibold text-sm">{aiResults.band_gap_eV?.toFixed(3)} eV</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* AI & Quantum Explanation Panel */}
+      {/* Applications */}
+      {applications && (
+        <div className="bg-card rounded-xl border border-border p-6 space-y-3 animate-fade-in">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-amber-500" />
+            Predicted Applications
+          </h3>
+          <p className="text-xs font-medium text-accent">{applications.material_class}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {[...(applications.primary_applications || []), ...(applications.element_applications || [])].slice(0, 5).map((app: string) => (
+              <span key={app} className="px-2 py-0.5 rounded-full bg-accent/10 text-accent text-xs">
+                {app}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* VQE Results + Circuit */}
+      {quantumResults && (
+        <div className="bg-card rounded-xl border border-border p-6 space-y-4 animate-fade-in">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Zap className="h-5 w-5 text-purple-500" />
+            VQE Results
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+              <p className="text-xs text-muted-foreground">Final Energy</p>
+              <p className="font-semibold text-sm text-accent">{quantumResults.final_energy?.toFixed(4)} Ha</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+              <p className="text-xs text-muted-foreground">Circuit Depth</p>
+              <p className="font-semibold text-sm">{quantumResults.circuit_depth}</p>
+            </div>
+          </div>
+          {/* Circuit diagram */}
+          {quantumResults.circuit_gates?.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Quantum Circuit</p>
+              <QuantumCircuitViewer
+                gates={quantumResults.circuit_gates}
+                nQubits={quantumResults.n_qubits}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Navigation Buttons */}
+      {hasElements && (
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            variant="outline"
+            onClick={() =>
+              navigate("/simulator", {
+                state: {
+                  elements,
+                  formula: getRawFormula(),
+                  source: "molecule-builder",
+                },
+              })
+            }
+          >
+            <Send className="h-4 w-4 mr-2" />
+            Full Simulator
+          </Button>
+          <Button variant="outline" onClick={() => navigate("/insights")}>
+            <Brain className="h-4 w-4 mr-2" />
+            AI Insights
+          </Button>
+        </div>
+      )}
+
+      {/* How It Works */}
       <Collapsible open={isExplanationOpen} onOpenChange={setIsExplanationOpen}>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" className="w-full justify-between">
@@ -206,7 +266,7 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
               <div>
                 <p className="font-medium text-sm">AI Property Prediction</p>
                 <p className="text-xs text-muted-foreground">
-                  Machine learning models trained on quantum chemistry data predict molecular properties like stability and energy levels.
+                  GradientBoosting models trained on Materials Project data predict formation energy and band gap from 20 elemental features.
                 </p>
               </div>
             </div>
@@ -215,31 +275,15 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
                 <Cpu className="h-4 w-4 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="font-medium text-sm">Quantum Simulation</p>
+                <p className="font-medium text-sm">VQE Quantum Simulation</p>
                 <p className="text-xs text-muted-foreground">
-                  Quantum algorithms model molecular behavior at the atomic level, providing accurate energy calculations impossible for classical computers.
+                  Real Variational Quantum Eigensolver using Qiskit — parameterized ansatz with Ry/CNOT gates optimized to find ground state energy.
                 </p>
               </div>
             </div>
           </div>
         </CollapsibleContent>
       </Collapsible>
-
-      {/* Future Placeholders */}
-      <div className="space-y-2">
-        <Button variant="outline" className="w-full" disabled>
-          <span className="opacity-50">🥽 AR Molecule View</span>
-          <span className="ml-auto text-xs text-muted-foreground">Coming Soon</span>
-        </Button>
-        <Button variant="outline" className="w-full" disabled>
-          <span className="opacity-50">⚡ Real Quantum Hardware</span>
-          <span className="ml-auto text-xs text-muted-foreground">Coming Soon</span>
-        </Button>
-        <Button variant="outline" className="w-full" disabled>
-          <span className="opacity-50">📄 Export Report</span>
-          <span className="ml-auto text-xs text-muted-foreground">Coming Soon</span>
-        </Button>
-      </div>
     </div>
   );
 }

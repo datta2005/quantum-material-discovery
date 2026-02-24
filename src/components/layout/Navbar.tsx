@@ -17,9 +17,9 @@ import { useState, useEffect } from "react";
 const navItems = [
   { name: "Dashboard", path: "/", icon: LayoutDashboard },
   { name: "Materials Explorer", path: "/materials", icon: Atom },
+  { name: "Candidate Generator", path: "/candidate-generator", icon: Brain },
   { name: "Molecule Builder", path: "/molecule-builder", icon: Hexagon },
   { name: "Quantum Simulator", path: "/simulator", icon: Cpu },
-  { name: "AI Insights", path: "/insights", icon: Brain },
   { name: "Experiments", path: "/experiments", icon: FlaskConical },
 ];
 
@@ -42,10 +42,10 @@ export function Navbar() {
       <div className="container flex h-16 items-center justify-between">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-quantum">
-            <Atom className="h-5 w-5 text-accent-foreground" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">QuantumAI</span>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg ">
+<img src="/pure_logo.png" alt="" />
+        </div>
+          <span className="text-lg font-semibold tracking-tight">QDiscover</span>
         </Link>
 
         {/* Navigation Links */}

@@ -1,353 +1,157 @@
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Sphere, Cylinder, Text, Environment } from "@react-three/drei";
-import { useMemo, useState, useCallback } from "react";
-import * as THREE from "three";
+/**
+ * Molecule3DViewer — 3Dmol.js viewer with PubChem real structure support.
+ *
+ * Fetches real 3D molecular structures from PubChem when available,
+ * with fallback to locally generated SDF for unknown compounds.
+ * Supports double/triple bond rendering via SDF format.
+ */
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import type { MoleculeElement } from "./MoleculeConstructionZone";
 
-// Bond legend component
-function BondLegend({ bondTypes }: { bondTypes: Set<number> }) {
-  if (bondTypes.size === 0) return null;
-
-  const bondInfo = [
-    { order: 1, label: "Single", lines: 1 },
-    { order: 2, label: "Double", lines: 2 },
-    { order: 3, label: "Triple", lines: 3 },
-  ];
-
-  const presentBonds = bondInfo.filter(b => bondTypes.has(b.order));
-
-  return (
-    <div className="absolute top-3 right-3 bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-border">
-      <p className="text-xs font-semibold text-muted-foreground mb-2">Bond Types</p>
-      <div className="space-y-1.5">
-        {presentBonds.map(bond => (
-          <div key={bond.order} className="flex items-center gap-2">
-            <div className="w-8 h-4 flex items-center justify-center gap-0.5">
-              {Array.from({ length: bond.lines }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-full h-0.5 bg-muted-foreground rounded-full"
-                  style={{ 
-                    height: bond.lines === 1 ? "3px" : "2px",
-                    opacity: 0.8 
-                  }}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">{bond.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Element colors based on CPK coloring convention
+// CPK colors for common elements
 const ELEMENT_COLORS: Record<string, string> = {
-  H: "#FFFFFF",
-  C: "#909090",
-  N: "#3050F8",
-  O: "#FF0D0D",
-  F: "#90E050",
-  Cl: "#1FF01F",
-  Br: "#A62929",
-  I: "#940094",
-  S: "#FFFF30",
-  P: "#FF8000",
-  B: "#FFB5B5",
-  Si: "#F0C8A0",
-  Fe: "#E06633",
-  Cu: "#C88033",
-  Zn: "#7D80B0",
-  Na: "#AB5CF2",
-  K: "#8F40D4",
-  Ca: "#3DFF00",
-  Mg: "#8AFF00",
-  Al: "#BFA6A6",
-  Ti: "#BFC2C7",
-  Li: "#CC80FF",
-  He: "#D9FFFF",
-  Ne: "#B3E3F5",
-  Ar: "#80D1E3",
+  H: "#FFFFFF", He: "#D9FFFF", Li: "#CC80FF", Be: "#C2FF00", B: "#FFB5B5",
+  C: "#909090", N: "#3050F8", O: "#FF0D0D", F: "#90E050", Ne: "#B3E3F5",
+  Na: "#AB5CF2", Mg: "#8AFF00", Al: "#BFA6A6", Si: "#F0C8A0", P: "#FF8000",
+  S: "#FFFF30", Cl: "#1FF01F", Ar: "#80D1E3", K: "#8F40D4", Ca: "#3DFF00",
+  Ti: "#BFC2C7", V: "#A6A6AB", Cr: "#8A99C7", Mn: "#9C7AC7", Fe: "#E06633",
+  Co: "#F090A0", Ni: "#50D050", Cu: "#C88033", Zn: "#7D80B0", Br: "#A62929",
+  I: "#940094", Ag: "#C0C0C0", Au: "#FFD123",
 };
 
-// Element radii (van der Waals radii in relative units)
-const ELEMENT_RADII: Record<string, number> = {
-  H: 0.25,
-  C: 0.4,
-  N: 0.38,
-  O: 0.35,
-  F: 0.32,
-  Cl: 0.45,
-  Br: 0.5,
-  I: 0.55,
-  S: 0.5,
-  P: 0.48,
-  B: 0.42,
-  Si: 0.55,
-  Fe: 0.55,
-  Cu: 0.5,
-  Zn: 0.5,
-  Na: 0.6,
-  K: 0.7,
-  Ca: 0.6,
-  Mg: 0.55,
-  Al: 0.5,
-  Ti: 0.55,
-  Li: 0.5,
-  He: 0.28,
-  Ne: 0.3,
-  Ar: 0.4,
+// Covalent radii (Å)
+const COVALENT_RADII: Record<string, number> = {
+  H: 0.31, He: 0.28, Li: 1.28, Be: 0.96, B: 0.84, C: 0.76, N: 0.71,
+  O: 0.66, F: 0.57, Ne: 0.58, Na: 1.66, Mg: 1.41, Al: 1.21, Si: 1.11,
+  P: 1.07, S: 1.05, Cl: 1.02, Ar: 1.06, K: 2.03, Ca: 1.76, Ti: 1.60,
+  V: 1.53, Cr: 1.39, Mn: 1.39, Fe: 1.32, Co: 1.26, Ni: 1.24, Cu: 1.32,
+  Zn: 1.22, Br: 1.20, I: 1.39, Ag: 1.45, Au: 1.36,
 };
 
-// Bond order determination based on common chemistry rules
-const TYPICAL_BOND_ORDERS: Record<string, Record<string, number>> = {
-  C: { C: 1, O: 2, N: 2, H: 1, S: 2 },
-  O: { O: 2, C: 2, N: 2, H: 1, S: 2 },
+// Bond order lookup
+const BOND_ORDERS: Record<string, Record<string, number>> = {
+  C: { C: 1, O: 2, N: 2, H: 1, S: 2, Cl: 1, F: 1, Br: 1, I: 1 },
+  O: { O: 2, C: 2, N: 2, H: 1, S: 2, P: 2 },
   N: { N: 3, C: 2, O: 2, H: 1 },
   S: { S: 2, C: 2, O: 2, H: 1 },
+  P: { O: 2, H: 1 },
 };
 
-function getBondOrder(symbol1: string, symbol2: string): number {
-  // Check if we have a predefined bond order
-  if (TYPICAL_BOND_ORDERS[symbol1]?.[symbol2]) {
-    return TYPICAL_BOND_ORDERS[symbol1][symbol2];
-  }
-  if (TYPICAL_BOND_ORDERS[symbol2]?.[symbol1]) {
-    return TYPICAL_BOND_ORDERS[symbol2][symbol1];
-  }
-  // Default to single bond
-  return 1;
+function getBondOrder(s1: string, s2: string): number {
+  return BOND_ORDERS[s1]?.[s2] || BOND_ORDERS[s2]?.[s1] || 1;
 }
 
-interface AtomPosition {
-  symbol: string;
-  position: [number, number, number];
-  color: string;
-  radius: number;
+// Load 3Dmol.js from CDN once
+let scriptLoaded = false;
+let scriptPromise: Promise<void> | null = null;
+
+function load3Dmol(): Promise<void> {
+  if (scriptLoaded && (window as any).$3Dmol) return Promise.resolve();
+  if (scriptPromise) return scriptPromise;
+  scriptPromise = new Promise((resolve, reject) => {
+    if ((window as any).$3Dmol) { scriptLoaded = true; resolve(); return; }
+    const script = document.createElement("script");
+    script.src = "https://3Dmol.org/build/3Dmol-min.js";
+    script.onload = () => { scriptLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error("Failed to load 3Dmol.js"));
+    document.head.appendChild(script);
+  });
+  return scriptPromise;
 }
 
-interface Bond {
-  start: [number, number, number];
-  end: [number, number, number];
-  order: number; // 1 = single, 2 = double, 3 = triple
-  startSymbol: string;
-  endSymbol: string;
+/**
+ * Build a molecular formula string from elements array.
+ * E.g. [{symbol:"C",count:6},{symbol:"H",count:6}] → "C6H6"
+ */
+function buildFormula(elements: MoleculeElement[]): string {
+  return elements
+    .map((el) => el.symbol + (el.count > 1 ? el.count : ""))
+    .join("");
 }
 
-function Atom({ position, color, radius, symbol }: AtomPosition) {
-  return (
-    <group position={position}>
-      <Sphere args={[radius, 32, 32]}>
-        <meshStandardMaterial
-          color={color}
-          metalness={0.3}
-          roughness={0.4}
-          envMapIntensity={0.5}
-        />
-      </Sphere>
-      <Text
-        position={[0, radius + 0.15, 0]}
-        fontSize={0.2}
-        color="#ffffff"
-        anchorX="center"
-        anchorY="bottom"
-        outlineWidth={0.02}
-        outlineColor="#000000"
-      >
-        {symbol}
-      </Text>
-    </group>
-  );
-}
+interface AtomPos { symbol: string; x: number; y: number; z: number }
+interface BondInfo { from: number; to: number; order: number }
 
-function SingleCylinder({ 
-  start, 
-  end, 
-  offset = [0, 0, 0],
-  radius = 0.06 
-}: { 
-  start: [number, number, number]; 
-  end: [number, number, number]; 
-  offset?: [number, number, number];
-  radius?: number;
-}) {
-  const { position, rotation, length } = useMemo(() => {
-    const startVec = new THREE.Vector3(...start).add(new THREE.Vector3(...offset));
-    const endVec = new THREE.Vector3(...end).add(new THREE.Vector3(...offset));
-    const midpoint = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
-    const direction = new THREE.Vector3().subVectors(endVec, startVec);
-    const length = direction.length();
-    
-    const quaternion = new THREE.Quaternion();
-    quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      direction.clone().normalize()
-    );
-    const euler = new THREE.Euler().setFromQuaternion(quaternion);
-    
-    return {
-      position: midpoint.toArray() as [number, number, number],
-      rotation: [euler.x, euler.y, euler.z] as [number, number, number],
-      length,
-    };
-  }, [start, end, offset]);
+/**
+ * Generate a FALLBACK SDF when PubChem doesn't have the structure.
+ * Uses golden spiral positioning with connectivity-guaranteed bonding.
+ */
+function generateFallbackSDF(elements: MoleculeElement[]): string {
+  const atoms: AtomPos[] = [];
+  const bonds: BondInfo[] = [];
+  const totalAtoms = elements.reduce((s, e) => s + e.count, 0);
+  if (totalAtoms === 0) return "";
 
-  return (
-    <Cylinder
-      args={[radius, radius, length, 16]}
-      position={position}
-      rotation={rotation}
-    >
-      <meshStandardMaterial
-        color="#6B7280"
-        metalness={0.5}
-        roughness={0.3}
-      />
-    </Cylinder>
-  );
-}
-
-function BondCylinder({ start, end, order }: Bond) {
-  const offsets = useMemo(() => {
-    // Calculate perpendicular offset direction for double/triple bonds
-    const direction = new THREE.Vector3(
-      end[0] - start[0],
-      end[1] - start[1],
-      end[2] - start[2]
-    ).normalize();
-    
-    // Find a perpendicular vector
-    const up = new THREE.Vector3(0, 1, 0);
-    let perpendicular = new THREE.Vector3().crossVectors(direction, up);
-    if (perpendicular.length() < 0.1) {
-      perpendicular = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(1, 0, 0));
-    }
-    perpendicular.normalize();
-    
-    // Second perpendicular for triple bonds
-    const perpendicular2 = new THREE.Vector3().crossVectors(direction, perpendicular).normalize();
-    
-    const spacing = 0.12;
-    
-    if (order === 1) {
-      return [[0, 0, 0] as [number, number, number]];
-    } else if (order === 2) {
-      return [
-        [perpendicular.x * spacing, perpendicular.y * spacing, perpendicular.z * spacing] as [number, number, number],
-        [-perpendicular.x * spacing, -perpendicular.y * spacing, -perpendicular.z * spacing] as [number, number, number],
-      ];
-    } else {
-      // Triple bond - one in center, two offset
-      return [
-        [0, 0, 0] as [number, number, number],
-        [perpendicular.x * spacing * 1.5, perpendicular.y * spacing * 1.5, perpendicular.z * spacing * 1.5] as [number, number, number],
-        [-perpendicular.x * spacing * 1.5, -perpendicular.y * spacing * 1.5, -perpendicular.z * spacing * 1.5] as [number, number, number],
-      ];
-    }
-  }, [start, end, order]);
-
-  const cylinderRadius = order === 1 ? 0.06 : order === 2 ? 0.045 : 0.04;
-
-  return (
-    <group>
-      {offsets.map((offset, i) => (
-        <SingleCylinder
-          key={i}
-          start={start}
-          end={end}
-          offset={offset}
-          radius={cylinderRadius}
-        />
-      ))}
-    </group>
-  );
-}
-
-function MoleculeStructure({ elements, onBondTypesChange }: { elements: MoleculeElement[]; onBondTypesChange?: (types: Set<number>) => void }) {
-  const { atoms, bonds } = useMemo(() => {
-    const atoms: AtomPosition[] = [];
-    const bonds: Bond[] = [];
-    
-    // Generate 3D positions for atoms in a realistic arrangement
-    let atomIndex = 0;
-    const baseRadius = 1.2;
-    
-    elements.forEach((element, elementIndex) => {
-      const color = ELEMENT_COLORS[element.symbol] || "#808080";
-      const radius = ELEMENT_RADII[element.symbol] || 0.35;
-      
-      for (let i = 0; i < element.count; i++) {
-        // Arrange atoms in a spherical pattern
-        const phi = Math.acos(-1 + (2 * atomIndex) / Math.max(1, getTotalAtoms(elements) - 1));
-        const theta = Math.sqrt(getTotalAtoms(elements) * Math.PI) * phi;
-        
-        // Add some variation for visual interest
-        const r = baseRadius + (elementIndex * 0.3);
-        const x = r * Math.sin(phi) * Math.cos(theta);
-        const y = r * Math.sin(phi) * Math.sin(theta);
-        const z = r * Math.cos(phi);
-        
+  // Position atoms
+  let idx = 0;
+  for (const el of elements) {
+    const cr = COVALENT_RADII[el.symbol] || 1.0;
+    for (let i = 0; i < el.count; i++) {
+      if (totalAtoms === 1) {
+        atoms.push({ symbol: el.symbol, x: 0, y: 0, z: 0 });
+      } else if (totalAtoms === 2) {
+        atoms.push({ symbol: el.symbol, x: idx === 0 ? -cr : cr, y: 0, z: 0 });
+      } else {
+        const phi = Math.acos(1 - (2 * (idx + 0.5)) / totalAtoms);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
+        const r = 0.9 + cr * 0.5 + Math.sqrt(totalAtoms) * 0.25;
         atoms.push({
-          symbol: element.symbol,
-          position: [x, y, z],
-          color,
-          radius,
+          symbol: el.symbol,
+          x: r * Math.sin(phi) * Math.cos(theta),
+          y: r * Math.sin(phi) * Math.sin(theta),
+          z: r * Math.cos(phi),
         });
-        
-        atomIndex++;
       }
-    });
-    
-    // Generate bonds between nearby atoms with bond order
-    for (let i = 0; i < atoms.length; i++) {
-      for (let j = i + 1; j < atoms.length; j++) {
-        const dist = Math.sqrt(
-          Math.pow(atoms[i].position[0] - atoms[j].position[0], 2) +
-          Math.pow(atoms[i].position[1] - atoms[j].position[1], 2) +
-          Math.pow(atoms[i].position[2] - atoms[j].position[2], 2)
-        );
-        
-        // Connect atoms that are close enough
-        const bondThreshold = atoms[i].radius + atoms[j].radius + 0.8;
-        if (dist < bondThreshold && bonds.length < atoms.length * 2) {
-          const bondOrder = getBondOrder(atoms[i].symbol, atoms[j].symbol);
-          bonds.push({
-            start: atoms[i].position,
-            end: atoms[j].position,
-            order: bondOrder,
-            startSymbol: atoms[i].symbol,
-            endSymbol: atoms[j].symbol,
-          });
-        }
-      }
+      idx++;
     }
-    
-    return { atoms, bonds };
-  }, [elements]);
-
-  // Notify parent of bond types present
-  useMemo(() => {
-    if (onBondTypesChange) {
-      const types = new Set(bonds.map(b => b.order));
-      onBondTypesChange(types);
-    }
-  }, [bonds, onBondTypesChange]);
-
-  if (atoms.length === 0) {
-    return null;
   }
 
-  return (
-    <group>
-      {bonds.map((bond, i) => (
-        <BondCylinder key={`bond-${i}`} {...bond} />
-      ))}
-      {atoms.map((atom, i) => (
-        <Atom key={`atom-${i}`} {...atom} />
-      ))}
-    </group>
-  );
+  // Connectivity-guaranteed bonding
+  const bondSet = new Set<string>();
+  function addBond(i: number, j: number) {
+    const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+    if (bondSet.has(key)) return;
+    bondSet.add(key);
+    bonds.push({ from: i + 1, to: j + 1, order: getBondOrder(atoms[i].symbol, atoms[j].symbol) });
+  }
+  function dist(a: AtomPos, b: AtomPos) {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
+  }
+
+  // Pass 1: nearest neighbor
+  for (let i = 0; i < atoms.length; i++) {
+    let nj = -1, nd = Infinity;
+    for (let j = 0; j < atoms.length; j++) {
+      if (i === j) continue;
+      const d = dist(atoms[i], atoms[j]);
+      if (d < nd) { nd = d; nj = j; }
+    }
+    if (nj >= 0) addBond(i, nj);
+  }
+  // Pass 2: close pairs
+  for (let i = 0; i < atoms.length; i++) {
+    for (let j = i + 1; j < atoms.length; j++) {
+      const ri = COVALENT_RADII[atoms[i].symbol] || 1.0;
+      const rj = COVALENT_RADII[atoms[j].symbol] || 1.0;
+      if (dist(atoms[i], atoms[j]) < (ri + rj) * 1.5 + 0.8) addBond(i, j);
+    }
+  }
+
+  // Build SDF
+  const lines: string[] = [];
+  lines.push("FallbackStructure");
+  lines.push("  QuantumMD   3D");
+  lines.push("Generated locally (PubChem unavailable)");
+  lines.push(`${String(atoms.length).padStart(3)}${String(bonds.length).padStart(3)}  0  0  0  0  0  0  0  0999 V2000`);
+  for (const a of atoms) {
+    lines.push(`${a.x.toFixed(4).padStart(10)}${a.y.toFixed(4).padStart(10)}${a.z.toFixed(4).padStart(10)} ${a.symbol.padEnd(3)} 0  0  0  0  0  0  0  0  0  0  0  0`);
+  }
+  for (const b of bonds) {
+    lines.push(`${String(b.from).padStart(3)}${String(b.to).padStart(3)}${String(b.order).padStart(3)}  0  0  0  0`);
+  }
+  lines.push("M  END");
+  lines.push("$$$$");
+  return lines.join("\n");
 }
 
 function getTotalAtoms(elements: MoleculeElement[]): number {
@@ -360,14 +164,123 @@ interface Molecule3DViewerProps {
 
 export function Molecule3DViewer({ elements }: Molecule3DViewerProps) {
   const totalAtoms = getTotalAtoms(elements);
-  const [bondTypes, setBondTypes] = useState<Set<number>>(new Set());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<any>(null);
+  const [structureSource, setStructureSource] = useState<"pubchem" | "generated" | "loading" | "idle">("idle");
+  const [bondCount, setBondCount] = useState(0);
 
-  const handleBondTypesChange = useCallback((types: Set<number>) => {
-    setBondTypes(types);
-  }, []);
+  const formula = useMemo(() => buildFormula(elements), [elements]);
+  const fallbackSDF = useMemo(() => generateFallbackSDF(elements), [elements]);
+
+  const initViewer = useCallback(async () => {
+    if (!containerRef.current || totalAtoms === 0) {
+      setStructureSource("idle");
+      return;
+    }
+
+    try {
+      await load3Dmol();
+    } catch {
+      console.error("Could not load 3Dmol.js");
+      return;
+    }
+
+    const $3Dmol = (window as any).$3Dmol;
+    if (!$3Dmol) return;
+
+    // Clear previous
+    if (viewerRef.current) {
+      try { viewerRef.current.clear(); } catch { }
+    }
+    containerRef.current.innerHTML = "";
+
+    // Create viewer
+    const viewer = $3Dmol.createViewer(containerRef.current, {
+      backgroundColor: "0x0f172a",
+      antialias: true,
+    });
+    viewerRef.current = viewer;
+
+    // Try fetching from PubChem first
+    setStructureSource("loading");
+    let sdfToUse = fallbackSDF;
+    let source: "pubchem" | "generated" = "generated";
+
+    try {
+      const resp = await fetch(
+        `http://localhost:5000/api/molecule/pubchem-structure?formula=${encodeURIComponent(formula)}`,
+        { signal: AbortSignal.timeout(12000) }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.sdf && data.source === "pubchem") {
+          sdfToUse = data.sdf;
+          source = "pubchem";
+        }
+      }
+    } catch {
+      // PubChem unavailable — use fallback
+    }
+
+    setStructureSource(source);
+
+    // Load the SDF
+    const model = viewer.addModel(sdfToUse, "sdf");
+
+    // Style: ball-and-stick
+    viewer.setStyle({}, {
+      stick: { radius: 0.15, colorscheme: "Jmol" },
+      sphere: { scale: 0.3, colorscheme: "Jmol" },
+    });
+
+    // Add labels
+    const modelAtoms = model.atoms || [];
+    for (let i = 0; i < modelAtoms.length; i++) {
+      const atom = modelAtoms[i];
+      if (atom) {
+        const sym = atom.elem || "?";
+        const hexColor = ELEMENT_COLORS[sym] || "#808080";
+        viewer.addLabel(sym, {
+          position: { x: atom.x, y: atom.y, z: atom.z },
+          fontSize: 11,
+          fontColor: "white",
+          fontOpacity: 0.9,
+          backgroundColor: "0x1e293b",
+          backgroundOpacity: 0.7,
+          borderColor: hexColor,
+          borderThickness: 1,
+          showBackground: true,
+          alignment: "center",
+          inFront: true,
+        });
+      }
+    }
+
+    // Count bonds
+    const totalBonds = modelAtoms.reduce((c: number, a: any) =>
+      c + (a.bonds ? a.bonds.length : 0), 0);
+    setBondCount(Math.floor(totalBonds / 2));
+
+    viewer.zoomTo();
+    viewer.spin("y", 1);
+    viewer.render();
+  }, [formula, fallbackSDF, totalAtoms]);
+
+  useEffect(() => {
+    initViewer();
+    return () => {
+      if (viewerRef.current) {
+        try { viewerRef.current.clear(); } catch { }
+        viewerRef.current = null;
+      }
+    };
+  }, [initViewer]);
 
   return (
-    <div className="relative h-full w-full min-h-[300px] rounded-xl overflow-hidden bg-gradient-to-b from-muted/30 to-muted/50 border border-border">
+    <div
+      className="relative h-full w-full min-h-[300px] rounded-xl overflow-hidden border border-border"
+      style={{ background: "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)" }}
+    >
       {totalAtoms === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
@@ -390,29 +303,51 @@ export function Molecule3DViewer({ elements }: Molecule3DViewerProps) {
         </div>
       ) : (
         <>
-          <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} intensity={1} />
-            <pointLight position={[-10, -10, -10]} intensity={0.5} />
-            <spotLight
-              position={[0, 10, 0]}
-              angle={0.3}
-              penumbra={1}
-              intensity={0.5}
-            />
-            <MoleculeStructure elements={elements} onBondTypesChange={handleBondTypesChange} />
-            <OrbitControls
-              enablePan={true}
-              enableZoom={true}
-              enableRotate={true}
-              autoRotate={true}
-              autoRotateSpeed={1}
-            />
-            <Environment preset="studio" />
-          </Canvas>
-          <BondLegend bondTypes={bondTypes} />
-          <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center text-xs text-muted-foreground bg-background/80 backdrop-blur-sm rounded-lg px-3 py-2">
-            <span>{totalAtoms} atom{totalAtoms !== 1 ? 's' : ''}</span>
+          <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+
+          {/* Source badge */}
+          {structureSource === "loading" && (
+            <div className="absolute top-3 right-3 bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-border">
+              <p className="text-xs text-muted-foreground animate-pulse">
+                ⏳ Fetching from PubChem...
+              </p>
+            </div>
+          )}
+          {structureSource === "pubchem" && (
+            <div className="absolute top-3 right-3 bg-emerald-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-emerald-500/30">
+              <p className="text-xs text-emerald-400 font-medium">
+                ✓ PubChem 3D Structure
+              </p>
+              <p className="text-[10px] text-emerald-400/60 mt-0.5">
+                Real molecular geometry
+              </p>
+            </div>
+          )}
+          {structureSource === "generated" && (
+            <div className="absolute top-3 right-3 bg-amber-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-amber-500/30">
+              <p className="text-xs text-amber-400 font-medium">
+                ⚠ Approximate Structure
+              </p>
+              <p className="text-[10px] text-amber-400/60 mt-0.5">
+                Not found in PubChem
+              </p>
+            </div>
+          )}
+
+          {/* Bottom bar */}
+          <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center text-xs text-muted-foreground bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2">
+            <span className="flex items-center gap-1.5">
+              <span>🧪</span>
+              <span>{formula}</span>
+              <span>•</span>
+              <span>{totalAtoms} atom{totalAtoms !== 1 ? "s" : ""}</span>
+              {bondCount > 0 && (
+                <>
+                  <span>•</span>
+                  <span>{bondCount} bonds</span>
+                </>
+              )}
+            </span>
             <span className="opacity-60">Drag to rotate • Scroll to zoom</span>
           </div>
         </>

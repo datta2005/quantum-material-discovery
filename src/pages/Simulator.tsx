@@ -1,251 +1,414 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, RotateCcw, Download, Cpu, CircleDot, Waves, Zap } from "lucide-react";
-import { useState } from "react";
+import {
+  Play,
+  Cpu,
+  Brain,
+  Zap,
+  CheckCircle2,
+  Download,
+  RotateCcw,
+  Atom,
+  Sparkles,
+  ChevronRight,
+  Beaker,
+  AlertCircle,
+} from "lucide-react";
+import { useState, useMemo } from "react";
+import { useLocation } from "react-router-dom";
+import { QuantumCircuitViewer } from "@/components/QuantumCircuitViewer";
 
+const API_URL = "http://localhost:5000";
+
+// ---- helpers ----
+function formatElements(elements: any[] = []) {
+  if (!elements?.length) return "";
+  return elements
+    .slice()
+    .sort((a: any, b: any) => a.symbol.localeCompare(b.symbol))
+    .map((e: any) => `${e.symbol}×${e.count}`)
+    .join(", ");
+}
+
+function downloadJSON(filename: string, obj: any) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---- component ----
 const Simulator = () => {
-  const [qubits, setQubits] = useState([4]);
-  const [simulationType, setSimulationType] = useState("electronic");
-  const [isRunning, setIsRunning] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
+  const location = useLocation();
+  const state = (location?.state as any) || {};
+  const incomingElements = state?.elements || [];
+  const incomingFormula = state?.formula || "";
 
-  const handleRunSimulation = () => {
+  const [formula, setFormula] = useState(incomingFormula || "");
+  const [qubits, setQubits] = useState([3]);
+  const [simulationType, setSimulationType] = useState("electronic");
+  const [maxIterations, setMaxIterations] = useState([30]);
+
+  // pipeline state
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [aiResults, setAiResults] = useState<any>(null);
+  const [quantumResults, setQuantumResults] = useState<any>(null);
+  const [applications, setApplications] = useState<any>(null);
+  const [structure, setStructure] = useState<any>(null);
+
+  const canRun = formula.trim().length > 0;
+
+  const handleRunSimulation = async () => {
+    if (!canRun) return;
     setIsRunning(true);
-    setTimeout(() => {
+    setError(null);
+    setAiResults(null);
+    setQuantumResults(null);
+    setApplications(null);
+    setStructure(null);
+
+    try {
+      const res = await fetch(`${API_URL}/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formula: formula.trim(),
+          n_qubits: qubits[0],
+          max_iterations: maxIterations[0],
+          simulation_type: simulationType,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      setAiResults(data.ai_screening);
+      setQuantumResults(data.quantum_simulation);
+      setApplications(data.predicted_applications);
+      setStructure(data.structure);
+    } catch (err: any) {
+      setError(err.message || "Simulation failed");
+    } finally {
       setIsRunning(false);
-      setHasResults(true);
-    }, 2000);
+    }
   };
 
   const handleReset = () => {
-    setQubits([4]);
-    setSimulationType("electronic");
-    setHasResults(false);
-    setIsRunning(false);
+    setAiResults(null);
+    setQuantumResults(null);
+    setApplications(null);
+    setStructure(null);
+    setError(null);
   };
+
+  const allDone = aiResults && quantumResults;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container py-8 space-y-6">
+      <main className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Quantum Simulator</h1>
-          <p className="text-muted-foreground">Configure and run quantum simulations for material analysis</p>
+        <div className="flex items-center gap-3 mb-8">
+          <div className="p-2 rounded-xl bg-accent/20">
+            <Cpu className="h-6 w-6 text-accent" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">AI + Quantum Simulator</h1>
+            <p className="text-sm text-muted-foreground">
+              Real VQE simulation &amp; AI property prediction
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Simulation Controls */}
-          <div className="bg-card rounded-xl border border-border p-6 space-y-6">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-accent" />
-              Simulation Controls
-            </h2>
-
-            {/* Qubits Slider */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Number of Qubits</label>
-                <span className="text-sm font-bold text-accent">{qubits[0]}</span>
+          {/* ─── Left Column: Controls ─── */}
+          <div className="space-y-5">
+            {/* Formula Input */}
+            <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Beaker className="h-4 w-4 text-accent" />
+                Compound
+              </h3>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Chemical Formula</label>
+                <input
+                  type="text"
+                  value={formula}
+                  onChange={(e) => setFormula(e.target.value)}
+                  placeholder="e.g. TiO2, LiCoO2, Fe2O3"
+                  className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                />
               </div>
-              <Slider
-                value={qubits}
-                onValueChange={setQubits}
-                min={2}
-                max={12}
-                step={1}
-                className="py-2"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>2</span>
-                <span>12</span>
-              </div>
+              {incomingElements?.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  From Molecule Builder: {formatElements(incomingElements)}
+                </p>
+              )}
             </div>
 
-            {/* Simulation Type */}
-            <div className="space-y-3">
-              <label className="text-sm font-medium">Simulation Type</label>
-              <Select value={simulationType} onValueChange={setSimulationType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="electronic">Electronic Structure</SelectItem>
-                  <SelectItem value="molecular">Molecular Energy</SelectItem>
-                  <SelectItem value="evolution">Quantum State Evolution</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Simulation Controls */}
+            <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Atom className="h-4 w-4 text-accent" />
+                Quantum Parameters
+              </h3>
 
-            {/* OpenQASM Input */}
-            <div className="space-y-3">
-              <label className="text-sm font-medium">OpenQASM Code</label>
-              <div className="bg-primary/5 rounded-lg p-4 font-mono text-xs text-muted-foreground overflow-x-auto border border-border">
-                <pre>{`OPENQASM 2.0;
-include "qelib1.inc";
-qreg q[${qubits[0]}];
-creg c[${qubits[0]}];
-
-h q[0];
-cx q[0], q[1];
-measure q -> c;`}</pre>
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Simulation Type</label>
+                <Select value={simulationType} onValueChange={setSimulationType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="electronic">Electronic Structure</SelectItem>
+                    <SelectItem value="energy">Energy Optimization</SelectItem>
+                    <SelectItem value="quantum">Quantum State Approx.</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <Button 
-                variant="quantum" 
-                className="flex-1" 
-                onClick={handleRunSimulation}
-                disabled={isRunning}
-              >
-                {isRunning ? (
-                  <>
-                    <div className="h-4 w-4 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin" />
-                    Running...
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4" />
-                    Run Simulation
-                  </>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <label className="text-sm font-medium">Qubits</label>
+                  <span className="text-sm font-bold text-accent">{qubits[0]}</span>
+                </div>
+                <Slider value={qubits} onValueChange={setQubits} min={2} max={6} step={1} className="py-1" />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <label className="text-sm font-medium">VQE Iterations</label>
+                  <span className="text-sm font-bold text-accent">{maxIterations[0]}</span>
+                </div>
+                <Slider value={maxIterations} onValueChange={setMaxIterations} min={10} max={60} step={5} className="py-1" />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="quantum"
+                  className="flex-1"
+                  onClick={handleRunSimulation}
+                  disabled={!canRun || isRunning}
+                >
+                  {isRunning ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin" />
+                      Running...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Run Simulation
+                    </>
+                  )}
+                </Button>
+                {allDone && (
+                  <Button variant="outline" size="icon" onClick={handleReset} title="Reset">
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
                 )}
-              </Button>
-              <Button variant="outline" onClick={handleReset}>
-                <RotateCcw className="h-4 w-4" />
-              </Button>
+              </div>
+            </div>
+
+            {/* Pipeline Status */}
+            <div className="bg-card rounded-xl border border-border p-5">
+              <h3 className="font-semibold text-sm mb-3">Pipeline</h3>
+              <div className="space-y-2">
+                {[
+                  { label: "AI Screening", done: !!aiResults, icon: Brain },
+                  { label: "VQE Simulation", done: !!quantumResults, icon: Cpu },
+                  { label: "Use-Case Analysis", done: !!applications, icon: Sparkles },
+                ].map(({ label, done, icon: Icon }) => (
+                  <div key={label} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${done ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                    {done ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4 opacity-40" />}
+                    {label}
+                    {done && <ChevronRight className="h-3 w-3 ml-auto" />}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Visualization Area */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Quantum Circuit Diagram */}
-            <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-              <h3 className="text-lg font-semibold">Quantum Circuit</h3>
-              <div className="h-48 bg-muted/30 rounded-lg flex items-center justify-center border border-border/50 relative overflow-hidden">
-                {/* Circuit Lines */}
-                <svg className="w-full h-full p-4" viewBox="0 0 400 120">
-                  {Array.from({ length: Math.min(qubits[0], 4) }).map((_, i) => (
-                    <g key={i}>
-                      {/* Qubit line */}
-                      <line x1="20" y1={30 + i * 25} x2="380" y2={30 + i * 25} stroke="currentColor" strokeOpacity="0.3" strokeWidth="1" />
-                      <text x="10" y={34 + i * 25} className="text-xs fill-muted-foreground">q{i}</text>
-                      
-                      {/* Hadamard gate */}
-                      {i === 0 && (
-                        <rect x="80" y={20 + i * 25} width="20" height="20" rx="2" className="fill-accent/20 stroke-accent" strokeWidth="1" />
-                      )}
-                      {i === 0 && (
-                        <text x="85" y={34 + i * 25} className="text-xs fill-accent font-semibold">H</text>
-                      )}
-                      
-                      {/* CNOT gate */}
-                      {i === 0 && (
-                        <circle cx="150" cy={30 + i * 25} r="4" className="fill-quantum" />
-                      )}
-                      {i === 1 && (
-                        <>
-                          <line x1="150" y1="30" x2="150" y2="55" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1" />
-                          <circle cx="150" cy={30 + i * 25} r="8" className="fill-none stroke-quantum" strokeWidth="2" />
-                          <line x1="142" y1={30 + i * 25} x2="158" y2={30 + i * 25} className="stroke-quantum" strokeWidth="2" />
-                          <line x1="150" y1={22 + i * 25} x2="150" y2={38 + i * 25} className="stroke-quantum" strokeWidth="2" />
-                        </>
-                      )}
-                      
-                      {/* Measurement */}
-                      <rect x="320" y={20 + i * 25} width="24" height="20" rx="2" className="fill-accent/10 stroke-accent/50" strokeWidth="1" />
-                      <path d="M 325 ${35 + i * 25} Q 332 ${25 + i * 25} 339 ${35 + i * 25}" fill="none" stroke="currentColor" strokeOpacity="0.5" />
-                    </g>
-                  ))}
-                </svg>
-              </div>
-            </div>
-
-            {/* Results Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Bloch Sphere */}
-              <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <CircleDot className="h-4 w-4 text-accent" />
-                  Bloch Sphere
-                </h3>
-                <div className="h-40 flex items-center justify-center relative">
-                  <div className={`w-32 h-32 rounded-full border-2 border-accent/30 relative ${hasResults ? 'animate-pulse-slow' : ''}`}>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-full h-px bg-accent/20" />
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-px h-full bg-accent/20" />
-                    </div>
-                    {hasResults && (
-                      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-quantum shadow-quantum animate-glow" />
-                    )}
-                  </div>
-                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 text-xs text-muted-foreground">|0⟩</div>
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-xs text-muted-foreground">|1⟩</div>
+          {/* ─── Right Column: Results ─── */}
+          <div className="lg:col-span-2 space-y-5">
+            {/* Error */}
+            {error && (
+              <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                <div>
+                  <p className="font-medium text-destructive">Simulation Error</p>
+                  <p className="text-sm text-muted-foreground mt-1">{error}</p>
                 </div>
               </div>
+            )}
 
-              {/* Energy Levels */}
-              <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Waves className="h-4 w-4 text-accent" />
-                  Energy Levels
+            {/* AI Screening Results */}
+            {aiResults && (
+              <div className="bg-card rounded-xl border border-border p-6 space-y-4 animate-fade-in">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-blue-500" />
+                  AI Screening Results
                 </h3>
-                <div className="h-40 flex items-end justify-around gap-2 px-4">
-                  {(hasResults ? [0.85, 0.12, 0.02, 0.01] : [0.25, 0.25, 0.25, 0.25]).map((prob, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                      <div 
-                        className={`w-full rounded-t-md transition-all duration-500 ${hasResults ? 'bg-gradient-to-t from-accent to-quantum' : 'bg-muted'}`}
-                        style={{ height: `${prob * 100}%` }}
-                      />
-                      <span className="text-xs text-muted-foreground">|{i.toString(2).padStart(2, '0')}⟩</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <ResultCard label="Formation Energy" value={`${aiResults.formation_energy_eV_per_atom?.toFixed(3)} eV/atom`} />
+                  <ResultCard label="Band Gap" value={`${aiResults.band_gap_eV?.toFixed(3)} eV`} />
+                  <ResultCard label="Thermodynamic" value={aiResults.is_stable ? "✓ Stable" : "Metastable"} accent={aiResults.is_stable} />
+                  <ResultCard label="Features Used" value={`${aiResults.feature_count}`} />
+                </div>
+              </div>
+            )}
+
+            {/* Use-Case Predictions */}
+            {applications && (
+              <div className="bg-card rounded-xl border border-border p-6 space-y-4 animate-fade-in">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-500" />
+                  Predicted Applications
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground mb-1">Material Class</p>
+                    <p className="font-semibold text-sm">{applications.material_class}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground mb-1">Solar Suitability</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-muted/50 rounded-full h-2">
+                        <div
+                          className="bg-amber-500 rounded-full h-2 transition-all"
+                          style={{ width: `${(applications.solar_suitability || 0) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold">{Math.round((applications.solar_suitability || 0) * 100)}%</span>
                     </div>
+                  </div>
+                </div>
+                {applications.stability_note && (
+                  <p className="text-sm text-muted-foreground italic">
+                    {applications.stability_note}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {(applications.primary_applications || []).map((app: string) => (
+                    <span key={app} className="px-2.5 py-1 rounded-full bg-accent/10 text-accent text-xs font-medium">
+                      {app}
+                    </span>
+                  ))}
+                  {(applications.element_applications || []).map((app: string) => (
+                    <span key={app} className="px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium">
+                      {app}
+                    </span>
                   ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Results Summary */}
-            {hasResults && (
-              <div className="bg-gradient-to-r from-accent/10 to-quantum/10 rounded-xl border border-accent/20 p-6 space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-accent" />
-                    Simulation Results
-                  </h3>
-                  <Button variant="outline" size="sm">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
+            {/* Quantum Simulation Results */}
+            {quantumResults && (
+              <div className="bg-card rounded-xl border border-border p-6 space-y-4 animate-fade-in">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-purple-500" />
+                  VQE Quantum Simulation
+                </h3>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <ResultCard label="Method" value={quantumResults.method} />
+                  <ResultCard label="Qubits" value={quantumResults.n_qubits} />
+                  <ResultCard label="Circuit Depth" value={quantumResults.circuit_depth} />
+                  <ResultCard label="Gate Count" value={quantumResults.gate_count} />
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-3 rounded-lg bg-card/50">
-                    <p className="text-xs text-muted-foreground">Ground State Energy</p>
-                    <p className="text-lg font-bold">-1.137 Ha</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-card/50">
-                    <p className="text-xs text-muted-foreground">Fidelity</p>
-                    <p className="text-lg font-bold text-success">98.2%</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-card/50">
-                    <p className="text-xs text-muted-foreground">Gate Count</p>
-                    <p className="text-lg font-bold">24</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-card/50">
-                    <p className="text-xs text-muted-foreground">Circuit Depth</p>
-                    <p className="text-lg font-bold">8</p>
-                  </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <ResultCard label="Initial Energy" value={`${quantumResults.initial_energy?.toFixed(4)} Ha`} />
+                  <ResultCard label="Final Energy" value={`${quantumResults.final_energy?.toFixed(4)} Ha`} accent />
+                  <ResultCard label="Improvement" value={`${quantumResults.energy_improvement?.toFixed(4)} Ha`} />
                 </div>
+
+                {/* Convergence Chart */}
+                {quantumResults.convergence?.length > 0 && (
+                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground mb-3">VQE Energy Convergence</p>
+                    <div className="h-32 flex items-end gap-[2px]">
+                      {quantumResults.convergence.map((e: number, i: number) => {
+                        const conv = quantumResults.convergence;
+                        const min = Math.min(...conv);
+                        const max = Math.max(...conv);
+                        const range = max - min || 1;
+                        const height = ((e - min) / range) * 100;
+                        return (
+                          <div
+                            key={i}
+                            className="flex-1 rounded-t transition-all bg-gradient-to-t from-purple-600 to-accent"
+                            style={{ height: `${Math.max(5, 100 - height)}%` }}
+                            title={`Iteration ${i + 1}: ${e.toFixed(4)} Ha`}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                      <span>Iter 1</span>
+                      <span>Iter {quantumResults.convergence.length}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quantum Circuit Diagram */}
+                {quantumResults.circuit_gates?.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Quantum Circuit</p>
+                    <QuantumCircuitViewer
+                      gates={quantumResults.circuit_gates}
+                      nQubits={quantumResults.n_qubits}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Export */}
+            {allDone && (
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => downloadJSON(`simulation_${formula}.json`, {
+                    formula,
+                    ai_screening: aiResults,
+                    quantum_simulation: quantumResults,
+                    predicted_applications: applications,
+                  })}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Results
+                </Button>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isRunning && !allDone && !error && (
+              <div className="bg-card rounded-xl border border-border/50 p-16 flex flex-col items-center justify-center text-center">
+                <Cpu className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-semibold text-muted-foreground/60 mb-2">
+                  Ready to Simulate
+                </h3>
+                <p className="text-sm text-muted-foreground/40 max-w-md">
+                  Enter a chemical formula and configure quantum parameters, then click "Run Simulation"
+                  to get real AI predictions and VQE quantum results.
+                </p>
               </div>
             )}
           </div>
@@ -254,5 +417,16 @@ measure q -> c;`}</pre>
     </div>
   );
 };
+
+function ResultCard({ label, value, accent }: { label: string; value: any; accent?: boolean }) {
+  return (
+    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <p className={`font-semibold text-sm ${accent ? "text-accent" : ""}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export default Simulator;

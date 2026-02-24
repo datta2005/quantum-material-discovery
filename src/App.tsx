@@ -10,6 +10,7 @@ import Simulator from "./pages/Simulator";
 import Insights from "./pages/Insights";
 import Experiments from "./pages/Experiments";
 import NotFound from "./pages/NotFound";
+import CandidateGenerator from "./pages/CandidateGenerator";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/simulator" element={<Simulator />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/experiments" element={<Experiments />} />
+          <Route path="/candidate-generator" element={<CandidateGenerator />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
