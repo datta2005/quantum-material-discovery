@@ -188,9 +188,9 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
             VQE Results
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-              <p className="text-xs text-muted-foreground">Final Energy</p>
-              <p className="font-semibold text-sm text-accent">{quantumResults.final_energy?.toFixed(4)} Ha</p>
+             <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+              <p className="text-xs text-muted-foreground">Ground State Energy</p>
+              <p className="font-semibold text-sm text-accent">{quantumResults.energy?.toFixed(6)} a.u.</p>
             </div>
             <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
               <p className="text-xs text-muted-foreground">Circuit Depth</p>
@@ -198,13 +198,21 @@ export function SimulationPanel({ elements }: SimulationPanelProps) {
             </div>
           </div>
           {/* Circuit diagram */}
-          {quantumResults.circuit_gates?.length > 0 && (
+           {quantumResults.circuit_layers?.length > 0 && (
             <div>
-              <p className="text-xs text-muted-foreground mb-2">Quantum Circuit</p>
-              <QuantumCircuitViewer
-                gates={quantumResults.circuit_gates}
-                nQubits={quantumResults.n_qubits}
-              />
+              <p className="text-xs text-muted-foreground mb-2">Quantum Circuit Layers ({quantumResults.n_qubits} qubits)</p>
+              <div className="space-y-1">
+                {quantumResults.circuit_layers.slice(0, 4).map((layer: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      layer.type === 'rotation' ? 'bg-accent' :
+                      layer.type === 'entanglement' ? 'bg-purple-400' : 'bg-muted'
+                    }`} />
+                    <span className="text-muted-foreground">{layer.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground/60">{layer.gates?.length} gates</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
